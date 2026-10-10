@@ -5,7 +5,7 @@
 <div class="max-w-5xl mx-auto px-4 sm:px-6 py-8 pb-28 md:pb-8">
     <h1 class="text-2xl font-black text-gray-900 mb-6">Checkout</h1>
 
-    <form method="POST" action="{{ route('checkout.place') }}" x-data="{ payment: 'cod', shippingRate: 0 }">
+    <form method="POST" action="{{ route('checkout.place') }}" x-data="{ payment: {{ $codAvailable ? "'cod'" : "'razorpay'" }}, shippingRate: 0 }">
         @csrf
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
@@ -72,13 +72,15 @@
                                 <p class="text-xs text-gray-500">UPI, Cards, Net Banking, Wallets</p>
                             </div>
                         </label>
+                        @if($codAvailable)
                         <label class="flex items-center gap-3 p-3 border-2 rounded-xl cursor-pointer transition" :class="payment === 'cod' ? 'border-violet-500 bg-violet-50' : 'border-gray-200 hover:border-violet-300'">
-                            <input type="radio" name="payment_method" value="cod" x-model="payment" class="text-violet-600" checked>
+                            <input type="radio" name="payment_method" value="cod" x-model="payment" class="text-violet-600">
                             <div>
                                 <p class="font-bold text-gray-800">💵 Cash on Delivery</p>
                                 <p class="text-xs text-gray-500">Pay when your order arrives</p>
                             </div>
                         </label>
+                        @endif
                     </div>
                 </div>
             </div>

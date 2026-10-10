@@ -16,15 +16,18 @@ class Product extends Model
         'battery', 'camera_main', 'camera_front', 'os', 'network',
         'colors', 'thumbnail', 'is_featured', 'is_active',
         'avg_rating', 'review_count',
+        'is_prebooking', 'expected_date', 'prebooking_note',
     ];
 
     protected $casts = [
-        'colors'      => 'array',
-        'is_featured' => 'boolean',
-        'is_active'   => 'boolean',
-        'track_stock' => 'boolean',
-        'price'       => 'decimal:2',
-        'sale_price'  => 'decimal:2',
+        'colors'         => 'array',
+        'is_featured'    => 'boolean',
+        'is_active'      => 'boolean',
+        'track_stock'    => 'boolean',
+        'price'          => 'decimal:2',
+        'sale_price'     => 'decimal:2',
+        'is_prebooking'  => 'boolean',
+        'expected_date'  => 'date',
     ];
 
     // ── Relationships ─────────────────────────────────────
@@ -89,6 +92,16 @@ class Product extends Model
         return ! $this->track_stock || $this->stock > 0;
     }
 
+    /**
+     * Whether the product can be added to cart / ordered right now — either
+     * because it's genuinely in stock, or because it's open for pre-booking
+     * (which doesn't require physical stock yet).
+     */
+    public function canOrderNow(): bool
+    {
+        return $this->isInStock() || $this->is_prebooking;
+    }
+
     public function getRouteKeyName(): string
     {
         return 'slug';
@@ -104,5 +117,10 @@ class Product extends Model
     public function scopeFeatured($query)
     {
         return $query->where('is_featured', true);
+    }
+
+    public function scopePrebooking($query)
+    {
+        return $query->where('is_prebooking', true);
     }
 }

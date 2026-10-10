@@ -6,9 +6,21 @@
 <div class="max-w-2xl">
     <h1 class="text-2xl font-bold text-gray-900 mb-5">{{ isset($coupon) ? 'Edit Coupon' : 'Create New Coupon' }}</h1>
     <div class="bg-white rounded-xl border border-gray-200 p-6">
-        <form method="POST" action="{{ isset($coupon) ? route('admin.coupons.update', $coupon) : route('admin.coupons.store') }}" class="space-y-5">
+        <form method="POST" action="{{ isset($coupon) ? route('admin.coupons.update', $coupon) : route('admin.coupons.store') }}"
+              class="space-y-5" x-data="{ productId: '{{ old('product_id', $coupon->product_id ?? '') }}' }">
             @csrf
             @if(isset($coupon)) @method('PUT') @endif
+
+            <div>
+                <label class="label">Specific Product <span class="text-gray-400 font-normal">optional</span></label>
+                <select name="product_id" x-model="productId" class="input">
+                    <option value="">— Site-wide coupon —</option>
+                    @foreach($products as $p)
+                    <option value="{{ $p->id }}">{{ $p->name }}</option>
+                    @endforeach
+                </select>
+                <p class="text-xs text-gray-400 mt-1">Leave blank for a normal site-wide coupon. When set, it only shows and works on that product's page, and only discounts that item.</p>
+            </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -27,10 +39,11 @@
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                     <label class="label">Discount Type *</label>
-                    <select name="type" class="input" required>
-                        <option value="percent" {{ old('type', $coupon->type ?? '') === 'percent' ? 'selected' : '' }}>Percentage (%)</option>
+                    <select name="type" class="input" required x-effect="if (productId && $el.value !== 'fixed') $el.value = 'fixed'">
+                        <option value="percent" :disabled="productId !== ''" {{ old('type', $coupon->type ?? '') === 'percent' ? 'selected' : '' }}>Percentage (%)</option>
                         <option value="fixed"   {{ old('type', $coupon->type ?? '') === 'fixed'   ? 'selected' : '' }}>Fixed Amount (₹)</option>
                     </select>
+                    <p class="text-xs text-gray-400 mt-1" x-show="productId !== ''">Locked to Fixed Amount for product-specific coupons.</p>
                 </div>
                 <div>
                     <label class="label">Discount Value *</label>

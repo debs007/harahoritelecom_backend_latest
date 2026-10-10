@@ -55,6 +55,7 @@
         $navLinks = [
             ['route'=>'admin.dashboard',       'label'=>'Dashboard',  'emoji'=>'📊'],
             ['route'=>'admin.products.index',  'label'=>'Products',   'emoji'=>'📱'],
+            ['route'=>'admin.products.index',  'label'=>'Pre-Bookings', 'emoji'=>'🔔', 'params'=>['prebooking'=>1]],
             ['route'=>'admin.categories.index','label'=>'Categories', 'emoji'=>'📂'],
             ['route'=>'admin.brands.index',    'label'=>'Brands',     'emoji'=>'🏷️'],
             ['route'=>'admin.orders.index',    'label'=>'Orders',     'emoji'=>'🛍️'],
@@ -62,13 +63,18 @@
             ['route'=>'admin.coupons.index',   'label'=>'Coupons',    'emoji'=>'🎟️'],
             ['route'=>'admin.shipping.index',  'label'=>'Shipping',   'emoji'=>'🚚'],
             ['route'=>'admin.reviews.index',   'label'=>'Reviews',    'emoji'=>'⭐'],
+            ['route'=>'admin.gift.index',      'label'=>'Free Gift',  'emoji'=>'🎁'],
+            ['route'=>'admin.gift-claims.index', 'label'=>'Gift Claims', 'emoji'=>'📦'],
+            ['route'=>'admin.banners.index',   'label'=>'Banners',    'emoji'=>'🖼️'],
+            ['route'=>'admin.trade-in-prices.index', 'label'=>'Trade-In Prices', 'emoji'=>'📲'],
+            ['route'=>'admin.settings.index',  'label'=>'Settings',   'emoji'=>'⚙️'],
         ];
         @endphp
         <div class="space-y-1">
             @foreach($navLinks as $link)
-            <a href="{{ route($link['route']) }}"
+            <a href="{{ route($link['route'], $link['params'] ?? []) }}"
                class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition
-                      {{ request()->routeIs($link['route'].'*') ? 'bg-violet-600 text-white shadow-lg' : 'text-gray-400 hover:bg-gray-800 hover:text-white' }}">
+                      {{ request()->routeIs($link['route'].'*') && request('prebooking') == ($link['params']['prebooking'] ?? null) ? 'bg-violet-600 text-white shadow-lg' : 'text-gray-400 hover:bg-gray-800 hover:text-white' }}">
                 <span>{{ $link['emoji'] }}</span>
                 {{ $link['label'] }}
                 @if($link['label'] === 'Orders')

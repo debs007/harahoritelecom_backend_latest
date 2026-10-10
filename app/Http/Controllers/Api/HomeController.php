@@ -3,6 +3,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ProductResource;
+use App\Models\Banner;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Coupon;
@@ -44,7 +45,9 @@ class HomeController extends Controller
                 'logo' => $b->logo ? url('storage/' . $b->logo) : null,
             ]);
 
-        $activeCoupons = Coupon::where('is_active', true)
+        // Product-specific coupons need that product's context to make sense,
+        // so only genuinely site-wide coupons show in this generic list.
+        $activeCoupons = Coupon::where('is_active', true)->whereNull('product_id')
             ->where(fn($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now()))
             ->take(3)->get()
             ->map(fn($c) => [
@@ -56,6 +59,20 @@ class HomeController extends Controller
                 'min_order'   => (float) $c->min_order_amount,
             ]);
 
+        $banners = Banner::with('product')->where('is_active', true)
+            ->orderBy('sort_order')->orderByDesc('id')->get()
+            ->map(fn($b) => [
+                'id'      => $b->id,
+                'image'   => url('storage/' . $b->image),
+                'title'   => $b->title,
+                'product' => $b->product ? [
+                    'id'             => $b->product->id,
+                    'slug'           => $b->product->slug,
+                    'name'           => $b->product->name,
+                    'is_prebooking'  => (bool) $b->product->is_prebooking,
+                ] : null,
+            ]);
+
         return response()->json([
             'featured'      => ProductResource::collection($featured),
             'new_arrivals'  => ProductResource::collection($newArrivals),
@@ -63,6 +80,7 @@ class HomeController extends Controller
             'categories'    => $categories,
             'brands'        => $brands,
             'coupons'       => $activeCoupons,
+            'banners'       => $banners,
         ]);
     }
 }

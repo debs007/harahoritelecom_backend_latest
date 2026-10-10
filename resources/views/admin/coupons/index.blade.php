@@ -35,6 +35,7 @@
                         <td class="px-4 py-3">
                             <span class="font-mono font-black text-gray-900 text-sm bg-gray-100 px-2 py-0.5 rounded">{{ $coupon->code }}</span>
                             @if($coupon->description)<p class="text-xs text-gray-500 mt-0.5">{{ $coupon->description }}</p>@endif
+                            @if($coupon->product)<span class="badge badge-indigo mt-1">🔖 {{ $coupon->product->name }}</span>@endif
                         </td>
                         <td class="px-4 py-3">
                             <span class="badge {{ $coupon->type === 'percent' ? 'badge-purple' : 'badge-blue' }} capitalize">{{ $coupon->type }}</span>

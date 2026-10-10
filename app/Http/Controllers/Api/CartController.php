@@ -30,7 +30,13 @@ class CartController extends Controller
                 $offer = \App\Models\ExchangeOffer::where('product_id', $item->product_id)
                     ->where('is_active', true)->first();
                 if ($offer) {
-                    $exchangeDiscount += $offer->calculateValue($item->exchange_data['condition']);
+                    $tradeInPrice = !empty($item->exchange_data['trade_in_price_id'])
+                        ? \App\Models\TradeInPrice::find($item->exchange_data['trade_in_price_id'])
+                        : null;
+                    $exchangeDiscount += $offer->calculateValue(
+                        $item->exchange_data['condition'],
+                        $tradeInPrice ? (float) $tradeInPrice->price : null
+                    );
                 }
             }
         }
@@ -63,7 +69,7 @@ class CartController extends Controller
         ]);
 
         $product = Product::findOrFail($request->product_id);
-        if (!$product->isInStock()) {
+        if (!$product->canOrderNow()) {
             return response()->json(['message' => 'Product is out of stock.'], 422);
         }
 
@@ -155,16 +161,27 @@ class CartController extends Controller
             return response()->json(['message' => 'Invalid or expired coupon code.'], 422);
         }
 
-        $items    = Cart::with('product')->where('user_id', auth()->id())->get();
-        $subtotal = $items->sum(fn($i) => $i->getSubtotal());
+        $items = Cart::with('product')->where('user_id', auth()->id())->get();
 
-        if ($subtotal < $coupon->min_order_amount) {
+        if ($coupon->isProductSpecific()) {
+            $productItems = $items->where('product_id', $coupon->product_id);
+            if ($productItems->isEmpty()) {
+                return response()->json([
+                    'message' => 'This coupon only applies to "' . $coupon->product->name . '". Add it to your cart first.',
+                ], 422);
+            }
+            $amountForCoupon = $productItems->sum(fn($i) => $i->getSubtotal());
+        } else {
+            $amountForCoupon = $items->sum(fn($i) => $i->getSubtotal());
+        }
+
+        if ($amountForCoupon < $coupon->min_order_amount) {
             return response()->json([
                 'message' => "Minimum order amount ₹{$coupon->min_order_amount} required for this coupon.",
             ], 422);
         }
 
-        $discount = $coupon->calculateDiscount($subtotal);
+        $discount = $coupon->calculateDiscount($amountForCoupon);
 
         // Store coupon in cache (stateless API)
         $this->storeCoupon([

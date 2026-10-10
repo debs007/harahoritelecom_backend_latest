@@ -17,11 +17,25 @@ use Illuminate\Support\Facades\DB;
 class OrderController extends Controller
 {
     // ── List orders ──────────────────────────────────────────────────────
-    public function index()
+    public function index(Request $request)
     {
-        $orders = Order::with(['items.product'])
-            ->where('user_id', auth()->id())
-            ->latest()->paginate(10);
+        $request->validate([
+            'from'     => 'nullable|date',
+            'to'       => 'nullable|date',
+            'per_page' => 'nullable|integer|min:1|max:50',
+        ]);
+
+        $query = Order::with(['items.product'])->where('user_id', auth()->id());
+
+        if ($request->filled('from')) {
+            $query->whereDate('created_at', '>=', $request->from);
+        }
+        if ($request->filled('to')) {
+            $query->whereDate('created_at', '<=', $request->to);
+        }
+
+        $perPage = (int) $request->input('per_page', 10);
+        $orders  = $query->latest()->paginate($perPage);
 
         return response()->json([
             'data' => $orders->map(fn($o) => $this->formatOrder($o))->values(),
@@ -112,6 +126,10 @@ class OrderController extends Controller
             'loyalty_points_to_redeem' => 'nullable|integer|min:0',
         ]);
 
+        if ($request->payment_method === 'cod' && ! auth()->user()->canUseCod()) {
+            return response()->json(['message' => 'Cash on Delivery is not available for your account.'], 422);
+        }
+
         $address      = auth()->user()->addresses()->findOrFail($request->address_id);
         $cartItems    = Cart::with(['product', 'variant'])->where('user_id', auth()->id())->get();
         $shippingZone = ShippingZone::findOrFail($request->shipping_zone_id);
@@ -123,9 +141,22 @@ class OrderController extends Controller
         // Get coupon from Cache (stateless API — no sessions)
         $couponData = Cache::get('api_cart_coupon_' . auth()->id());
         $coupon     = $couponData ? Coupon::find($couponData['id']) : null;
+        if ($coupon && ! $coupon->isValid()) {
+            $coupon = null; // may have expired / hit its usage limit since it was applied
+        }
 
-        $subtotal         = $cartItems->sum(fn($i) => $i->getSubtotal());
-        $discount         = $coupon ? $coupon->calculateDiscount($subtotal) : 0;
+        $subtotal = $cartItems->sum(fn($i) => $i->getSubtotal());
+
+        $discount = 0;
+        if ($coupon && $coupon->isProductSpecific()) {
+            $productLineAmount = $cartItems->where('product_id', $coupon->product_id)
+                ->sum(fn($i) => $i->getSubtotal());
+            // If the product was removed from the cart after the coupon was
+            // applied, the discount silently no longer applies.
+            $discount = $productLineAmount > 0 ? $coupon->calculateDiscount($productLineAmount) : 0;
+        } elseif ($coupon) {
+            $discount = $coupon->calculateDiscount($subtotal);
+        }
 
         // Read exchange data from cart items
         $exchangeData     = null;
@@ -139,7 +170,13 @@ class OrderController extends Controller
             $offer = ExchangeOffer::where('product_id', $cartItemWithExchange->product_id)
                 ->where('is_active', true)->first();
             if ($offer) {
-                $exchangeDiscount = $offer->calculateValue($exchangeData['condition']);
+                $tradeInPrice = !empty($exchangeData['trade_in_price_id'])
+                    ? \App\Models\TradeInPrice::find($exchangeData['trade_in_price_id'])
+                    : null;
+                $exchangeDiscount = $offer->calculateValue(
+                    $exchangeData['condition'],
+                    $tradeInPrice ? (float) $tradeInPrice->price : null
+                );
             }
         }
 
@@ -176,14 +213,15 @@ class OrderController extends Controller
             $exchangeRequestId = null;
             if ($exchangeData && !empty($exchangeData['brand'])) {
                 $er = ExchangeRequest::create([
-                    'user_id'         => auth()->id(),
-                    'product_id'      => $cartItems->first()->product_id,
-                    'old_phone_brand' => $exchangeData['brand'],
-                    'old_phone_model' => $exchangeData['model'] ?? '',
-                    'imei'            => $exchangeData['imei'] ?? '',
-                    'condition'       => $exchangeData['condition'],
-                    'estimated_value' => $exchangeDiscount,
-                    'status'          => 'pending',
+                    'user_id'           => auth()->id(),
+                    'product_id'        => $cartItems->first()->product_id,
+                    'trade_in_price_id' => $exchangeData['trade_in_price_id'] ?? null,
+                    'old_phone_brand'   => $exchangeData['brand'],
+                    'old_phone_model'   => $exchangeData['model'] ?? '',
+                    'imei'              => $exchangeData['imei'] ?? '',
+                    'condition'         => $exchangeData['condition'],
+                    'estimated_value'   => $exchangeDiscount,
+                    'status'            => 'pending',
                 ]);
                 $exchangeRequestId = $er->id;
             }
@@ -276,6 +314,7 @@ class OrderController extends Controller
                     'amount'   => (int)($total * 100),
                     'currency' => 'INR',
                     'receipt'  => $order->order_number,
+                    'notes'    => ['order_id' => $order->id],
                 ]);
                 $razorpayData = [
                     'key'          => config('services.razorpay.key'),
@@ -284,7 +323,21 @@ class OrderController extends Controller
                     'order_number' => $order->order_number,
                 ];
             } catch (\Exception $e) {
-                // Razorpay not configured — COD fallback
+                \Illuminate\Support\Facades\Log::error(
+                    'Razorpay order creation failed for order #' . $order->order_number . ': ' . $e->getMessage()
+                );
+                // Do NOT fall through to a fake "success" response — that's
+                // what previously caused the app to show "Order placed
+                // successfully!" and skip the payment step entirely
+                // whenever Razorpay couldn't be reached (in practice, this
+                // fired on every single Razorpay order, because the
+                // credentials weren't wired into config/services.php).
+                // The order row itself is left as-is (status/payment_status
+                // both already 'pending') so it's visible to admin as an
+                // order that still needs a working payment attempt.
+                return response()->json([
+                    'message' => 'Could not start online payment right now. Please try again in a moment, or use Cash on Delivery if available. Your order number is ' . $order->order_number . ' — no payment has been collected for it yet.',
+                ], 502);
             }
         }
 
@@ -349,6 +402,7 @@ class OrderController extends Controller
                 'payment_status' => 'paid',
                 'payment_id'     => $request->razorpay_payment_id,
                 'status'         => 'confirmed',
+                'confirmed_at'   => $order->confirmed_at ?? now(),
             ]);
             OrderStatusLog::create([
                 'order_id' => $order->id,
@@ -378,7 +432,10 @@ class OrderController extends Controller
             ->sortByDesc('is_metro')
             ->values();
 
-        return response()->json(['shipping_zones' => $zones]);
+        return response()->json([
+            'shipping_zones' => $zones,
+            'cod_available'  => auth()->user()->canUseCod(),
+        ]);
     }
 
     // ── Formatters ───────────────────────────────────────────────────────
@@ -488,5 +545,61 @@ class OrderController extends Controller
         $order->save();
 
         return response()->json(['message' => 'Refund request submitted successfully']);
+    }
+
+    /**
+     * Returns a short-lived signed URL for the order's invoice PDF.
+     * A separate step from actually serving the PDF because the download
+     * needs to be openable in an external browser/PDF viewer, which won't
+     * carry the app's Bearer auth header — the signature is the proof of
+     * authorization instead, generated here only after confirming this
+     * order belongs to the requesting user and has actually been delivered.
+     */
+    public function invoiceLink($number)
+    {
+        $order = Order::where('user_id', auth()->id())
+            ->where('order_number', $number)
+            ->firstOrFail();
+
+        if ($order->status !== 'delivered') {
+            return response()->json([
+                'message' => 'Your invoice will be available here once this order has been delivered.',
+            ], 422);
+        }
+
+        $url = \Illuminate\Support\Facades\URL::temporarySignedRoute(
+            'api.orders.invoice.download',
+            now()->addMinutes(10),
+            ['number' => $order->order_number]
+        );
+
+        return response()->json(['url' => $url]);
+    }
+
+    /**
+     * Streams the invoice PDF itself. Reached only via a valid signed URL
+     * (see invoiceLink() above) — the 'signed' route middleware rejects
+     * anything else before this method ever runs, so no separate ownership
+     * check is needed here; the signature already proves it. The delivered
+     * check is repeated anyway as a defensive second layer, in case an
+     * order's status changes in the few minutes a signed link stays valid.
+     */
+    public function downloadInvoiceFile($number)
+    {
+        $order = Order::where('order_number', $number)
+            ->with(['user', 'address', 'items.product', 'shippingZone', 'coupon'])
+            ->firstOrFail();
+
+        abort_if($order->status !== 'delivered', 422, 'Invoice is available once this order has been delivered.');
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('admin.orders.invoice', compact('order'))
+                  ->setPaper('a4', 'portrait')
+                  ->setOptions([
+                      'defaultFont'          => 'sans-serif',
+                      'isRemoteEnabled'      => false,
+                      'isHtml5ParserEnabled' => true,
+                  ]);
+
+        return $pdf->download('Invoice-' . $order->order_number . '.pdf');
     }
 }

@@ -30,7 +30,7 @@ class CartController extends Controller
         ]);
 
         $product = Product::findOrFail($request->product_id);
-        if (!$product->isInStock()) {
+        if (!$product->canOrderNow()) {
             return response()->json(['error' => 'Product is out of stock.'], 422);
         }
 
@@ -139,13 +139,22 @@ class CartController extends Controller
         }
 
         $cartItems = $this->getCartItems();
-        $subtotal  = $cartItems->sum(fn($item) => $item->getSubtotal());
 
-        if ($subtotal < $coupon->min_order_amount) {
+        if ($coupon->isProductSpecific()) {
+            $productItems = $cartItems->where('product_id', $coupon->product_id);
+            if ($productItems->isEmpty()) {
+                return back()->with('error', 'This coupon only applies to "' . $coupon->product->name . '". Add it to your cart first.');
+            }
+            $amountForCoupon = $productItems->sum(fn($item) => $item->getSubtotal());
+        } else {
+            $amountForCoupon = $cartItems->sum(fn($item) => $item->getSubtotal());
+        }
+
+        if ($amountForCoupon < $coupon->min_order_amount) {
             return back()->with('error', "Minimum order amount is ₹{$coupon->min_order_amount} for this coupon.");
         }
 
-        $discount = $coupon->calculateDiscount($subtotal);
+        $discount = $coupon->calculateDiscount($amountForCoupon);
         session(['coupon' => [
             'id'       => $coupon->id,
             'code'     => $coupon->code,
@@ -181,7 +190,7 @@ class CartController extends Controller
         $product = Product::findOrFail($request->product_id);
         $qty     = $request->quantity ?? 1;
 
-        if (!$product->isInStock()) {
+        if (!$product->canOrderNow()) {
             return redirect()->route('products.show', $product)
                 ->with('error', 'Product is out of stock.');
         }
@@ -258,7 +267,13 @@ class CartController extends Controller
                 $offer = \App\Models\ExchangeOffer::where('product_id', $item->product_id)
                     ->where('is_active', true)->first();
                 if ($offer) {
-                    $exchangeDiscount += $offer->calculateValue($item->exchange_data['condition']);
+                    $tradeInPrice = !empty($item->exchange_data['trade_in_price_id'])
+                        ? \App\Models\TradeInPrice::find($item->exchange_data['trade_in_price_id'])
+                        : null;
+                    $exchangeDiscount += $offer->calculateValue(
+                        $item->exchange_data['condition'],
+                        $tradeInPrice ? (float) $tradeInPrice->price : null
+                    );
                 }
             }
         }

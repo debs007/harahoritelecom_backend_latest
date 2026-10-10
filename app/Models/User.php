@@ -14,6 +14,7 @@ class User extends Authenticatable
     protected $fillable = [
         'name', 'email', 'phone', 'avatar', 'role', 'password',
         'is_active', 'loyalty_points', 'city', 'state', 'pincode', 'crm_segment',
+        'cod_override',
     ];
 
     protected $hidden = ['password', 'remember_token'];
@@ -22,11 +23,25 @@ class User extends Authenticatable
         'email_verified_at' => 'datetime',
         'is_active'         => 'boolean',
         'loyalty_points'    => 'integer',
+        'cod_override'      => 'boolean',
     ];
 
     public function isAdmin(): bool
     {
         return $this->role === 'admin';
+    }
+
+    /**
+     * Whether this customer can pay via Cash on Delivery. A per-user
+     * override (set from Admin → Users) always wins; otherwise it falls
+     * back to the site-wide toggle (Admin → Settings).
+     */
+    public function canUseCod(): bool
+    {
+        if (! is_null($this->cod_override)) {
+            return $this->cod_override;
+        }
+        return (bool) \App\Models\CrmSetting::get('cod_enabled', true);
     }
 
     public function addresses()

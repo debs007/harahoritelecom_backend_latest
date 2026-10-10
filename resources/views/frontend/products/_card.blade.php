@@ -20,7 +20,11 @@
                 ⭐ Hot
             </span>
         @endif
-        @if(!$product->isInStock())
+        @if($product->is_prebooking)
+            <div class="absolute inset-0 bg-white/70 flex items-center justify-center">
+                <span class="bg-indigo-600 text-white text-xs font-bold px-3 py-1 rounded-full">🔔 Pre-Booking</span>
+            </div>
+        @elseif(!$product->isInStock())
             <div class="absolute inset-0 bg-white/70 flex items-center justify-center">
                 <span class="bg-gray-800 text-white text-xs font-bold px-3 py-1 rounded-full">Out of Stock</span>
             </div>
@@ -84,13 +88,13 @@
         </div>
 
         {{-- CTA --}}
-        @if($product->isInStock())
+        @if($product->canOrderNow())
             <button onclick="addToCart({{ $product->id }}, null, 1)"
                     class="w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white
                            text-sm font-bold py-2.5 rounded-xl
                            hover:from-violet-700 hover:to-fuchsia-700
                            active:scale-95 transition-all shadow-md shadow-violet-100">
-                🛒 Add to Cart
+                @if($product->is_prebooking) 🔔 Pre-Book Now @else 🛒 Add to Cart @endif
             </button>
         @else
             <button disabled class="w-full bg-gray-100 text-gray-400 text-sm font-medium py-2.5 rounded-xl cursor-not-allowed">

@@ -4,24 +4,27 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Coupon;
+use App\Models\Product;
 use Illuminate\Http\Request;
 
 class CouponAdminController extends Controller
 {
     public function index()
     {
-        $coupons = Coupon::latest()->paginate(20);
+        $coupons = Coupon::with('product')->latest()->paginate(20);
         return view('admin.coupons.index', compact('coupons'));
     }
 
     public function create()
     {
-        return view('admin.coupons.create');
+        $products = Product::orderBy('name')->get(['id', 'name']);
+        return view('admin.coupons.create', compact('products'));
     }
 
     public function store(Request $request)
     {
         $data = $request->validate([
+            'product_id'        => 'nullable|exists:products,id',
             'code'              => 'required|string|max:50|unique:coupons,code',
             'description'       => 'nullable|string|max:255',
             'type'              => 'required|in:percent,fixed',
@@ -34,6 +37,13 @@ class CouponAdminController extends Controller
             'expires_at'        => 'nullable|date|after_or_equal:starts_at',
         ]);
 
+        // Product-specific coupons only make sense as a flat ₹ amount off
+        // that one product — a percentage invites confusion about what
+        // it's a percentage of once it's scoped to a single item.
+        if (! empty($data['product_id'])) {
+            $data['type'] = 'fixed';
+        }
+
         $data['code'] = strtoupper($data['code']);
         Coupon::create($data);
 
@@ -42,12 +52,14 @@ class CouponAdminController extends Controller
 
     public function edit(Coupon $coupon)
     {
-        return view('admin.coupons.edit', compact('coupon'));
+        $products = Product::orderBy('name')->get(['id', 'name']);
+        return view('admin.coupons.edit', compact('coupon', 'products'));
     }
 
     public function update(Request $request, Coupon $coupon)
     {
         $data = $request->validate([
+            'product_id'       => 'nullable|exists:products,id',
             'code'             => 'required|string|max:50|unique:coupons,code,' . $coupon->id,
             'description'      => 'nullable|string|max:255',
             'type'             => 'required|in:percent,fixed',
@@ -59,6 +71,10 @@ class CouponAdminController extends Controller
             'starts_at'        => 'nullable|date',
             'expires_at'       => 'nullable|date',
         ]);
+
+        if (! empty($data['product_id'])) {
+            $data['type'] = 'fixed';
+        }
 
         $data['code'] = strtoupper($data['code']);
         $coupon->update($data);

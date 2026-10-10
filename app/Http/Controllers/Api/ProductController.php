@@ -67,16 +67,23 @@ class ProductController extends Controller
                 'created_at' => $r->created_at->diffForHumans(),
             ]);
 
-        $activeCoupons = Coupon::where('is_active', true)
-            ->where(fn($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now()))
-            ->take(3)->get()
+        $validNotExpired = fn($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now());
+
+        $productCoupon = Coupon::where('is_active', true)->where('product_id', $product->id)
+            ->where($validNotExpired)->first();
+
+        $globalCoupons = Coupon::where('is_active', true)->whereNull('product_id')
+            ->where($validNotExpired)->take($productCoupon ? 2 : 3)->get();
+
+        $activeCoupons = collect([$productCoupon])->filter()->concat($globalCoupons)
             ->map(fn($c) => [
-                'code'        => $c->code,
-                'type'        => $c->type,
-                'value'       => (float) $c->value,
-                'description' => $c->description,
-                'max_discount'=> $c->max_discount ? (float) $c->max_discount : null,
-                'min_order'   => (float) $c->min_order_amount,
+                'code'             => $c->code,
+                'type'             => $c->type,
+                'value'            => (float) $c->value,
+                'description'      => $c->description,
+                'max_discount'     => $c->max_discount ? (float) $c->max_discount : null,
+                'min_order'        => (float) $c->min_order_amount,
+                'product_specific' => ! is_null($c->product_id),
             ]);
 
         return response()->json([

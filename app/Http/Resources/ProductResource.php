@@ -21,7 +21,11 @@ class ProductResource extends JsonResource
             'sku'               => $this->sku,
             'stock'             => $this->stock,
             'in_stock'          => $this->isInStock(),
+            'can_order_now'     => $this->canOrderNow(),
             'is_featured'       => (bool) $this->is_featured,
+            'is_prebooking'     => (bool) $this->is_prebooking,
+            'expected_date'     => $this->expected_date?->format('Y-m-d'),
+            'prebooking_note'   => $this->prebooking_note,
             'colors'            => $this->colors ?? [],
             'specs' => [
                 'display_size'  => $this->display_size,

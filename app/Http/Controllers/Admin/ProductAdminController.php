@@ -28,6 +28,7 @@ class ProductAdminController extends Controller
         if ($request->brand)    $query->where('brand_id', $request->brand);
         if ($request->status === 'active')   $query->where('is_active', true);
         if ($request->status === 'inactive') $query->where('is_active', false);
+        if ($request->boolean('prebooking')) $query->where('is_prebooking', true);
 
         $products   = $query->latest()->paginate(20);
         $categories = Category::all();
@@ -345,12 +346,16 @@ class ProductAdminController extends Controller
             'colors.*'          => 'string|max:50',
             'is_featured'       => 'nullable',
             'is_active'         => 'nullable',
+            'is_prebooking'     => 'nullable',
+            'expected_date'     => 'nullable|date',
+            'prebooking_note'   => 'nullable|string|max:255',
             'thumbnail'         => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
             'general_images'    => 'nullable|array',
             'general_images.*'  => 'image|mimes:jpeg,png,jpg,webp|max:5120',
         ]) + [
-            'is_active'   => $request->has('is_active')   ? true : false,
-            'is_featured' => $request->has('is_featured') ? true : false,
+            'is_active'     => $request->has('is_active')     ? true : false,
+            'is_featured'   => $request->has('is_featured')   ? true : false,
+            'is_prebooking' => $request->has('is_prebooking') ? true : false,
         ];
     }
 

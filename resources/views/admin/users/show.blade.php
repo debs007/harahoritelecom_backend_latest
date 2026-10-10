@@ -79,5 +79,20 @@
             <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition">Save</button>
         </form>
     </div>
+
+    {{-- Cash on Delivery override --}}
+    <div class="bg-white rounded-xl border border-gray-200 p-5 max-w-sm">
+        <h2 class="font-bold text-gray-800 mb-1">Cash on Delivery</h2>
+        <p class="text-xs text-gray-500 mb-3">Overrides the site-wide COD setting for this customer only.</p>
+        <form method="POST" action="{{ route('admin.users.cod', $user) }}" class="flex gap-3">
+            @csrf @method('PATCH')
+            <select name="cod_override" class="input text-sm flex-1">
+                <option value="default"  {{ is_null($user->cod_override) ? 'selected' : '' }}>Follow site default</option>
+                <option value="enabled"  {{ $user->cod_override === true  ? 'selected' : '' }}>Always allow COD</option>
+                <option value="disabled" {{ $user->cod_override === false ? 'selected' : '' }}>Always block COD</option>
+            </select>
+            <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition">Save</button>
+        </form>
+    </div>
 </div>
 @endsection

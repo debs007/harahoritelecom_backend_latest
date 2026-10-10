@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class ExchangeRequest extends Model
 {
     protected $fillable = [
-        'order_id', 'user_id', 'product_id',
+        'order_id', 'user_id', 'product_id', 'trade_in_price_id',
         'old_phone_brand', 'old_phone_model', 'imei',
         'condition', 'estimated_value', 'approved_value',
         'status', 'admin_notes',
@@ -18,9 +18,10 @@ class ExchangeRequest extends Model
         'approved_value'  => 'decimal:2',
     ];
 
-    public function order()   { return $this->belongsTo(Order::class); }
-    public function user()    { return $this->belongsTo(User::class); }
-    public function product() { return $this->belongsTo(Product::class); }
+    public function order()        { return $this->belongsTo(Order::class); }
+    public function user()         { return $this->belongsTo(User::class); }
+    public function product()      { return $this->belongsTo(Product::class); }
+    public function tradeInPrice() { return $this->belongsTo(TradeInPrice::class); }
 
     public function getConditionLabelAttribute(): string
     {

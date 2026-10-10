@@ -116,10 +116,16 @@
                 @if($product->is_featured)
                     <span class="badge badge-yellow text-xs">Featured</span>
                 @endif
-                @if(!$product->isInStock())
+                @if($product->is_prebooking)
+                    <span class="badge badge-indigo text-xs">🔔 Pre-Booking{{ $product->expected_date ? ' · Expected '.$product->expected_date->format('d M Y') : '' }}</span>
+                @elseif(!$product->isInStock())
                     <span class="badge badge-red text-xs">Out of Stock</span>
                 @endif
             </div>
+
+            @if($product->is_prebooking && $product->prebooking_note)
+                <p class="text-xs text-indigo-600 font-semibold -mt-1 mb-3">{{ $product->prebooking_note }}</p>
+            @endif
 
             <h1 class="text-2xl sm:text-3xl font-black text-gray-900 leading-tight mb-3">{{ $product->name }}</h1>
 
@@ -159,12 +165,15 @@
                     @foreach($availableCoupons as $coupon)
                     <div class="flex items-center gap-3 px-4 py-3" x-data="{ copied: false }">
                         <div class="flex-1 min-w-0">
-                            <p class="text-xs font-bold text-gray-800">
+                            <p class="text-xs font-bold text-gray-800 flex items-center gap-1.5 flex-wrap">
                                 @if($coupon->type === 'percent')
                                     🎉 {{ $coupon->value }}% OFF
                                     @if($coupon->max_discount) up to ₹{{ number_format($coupon->max_discount) }} @endif
                                 @else
                                     🎉 Flat ₹{{ number_format($coupon->value) }} OFF
+                                @endif
+                                @if($coupon->product_id)
+                                    <span class="text-[10px] font-black uppercase tracking-wide bg-violet-600 text-white px-1.5 py-0.5 rounded">This product</span>
                                 @endif
                             </p>
                             <p class="text-xs text-gray-500 mt-0.5">
@@ -367,11 +376,11 @@
 
             {{-- ══ CTA BUTTONS ════════════════════════════════════ --}}
             <div class="flex gap-3 mb-5">
-                @if($product->isInStock())
+                @if($product->canOrderNow())
                     <button x-on:click="addToCartWithColor()"
                             :disabled="isOutOfStock"
                             class="flex-1 btn-primary py-3.5 text-center text-base disabled:opacity-40 disabled:cursor-not-allowed">
-                        🛒 Add to Cart
+                        @if($product->is_prebooking) 🔔 Pre-Book Now @else 🛒 Add to Cart @endif
                     </button>
                     <form method="POST" action="{{ route('cart.buynow') }}" class="flex-1" x-ref="buyNowForm">
                         @csrf
@@ -383,7 +392,7 @@
                         <button type="submit"
                                 :disabled="isOutOfStock"
                                 class="w-full bg-gray-900 text-white font-bold py-3.5 px-4 rounded-xl hover:bg-gray-800 transition text-sm flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed">
-                            ⚡ Buy Now
+                            @if($product->is_prebooking) 🔔 Book Now @else ⚡ Buy Now @endif
                         </button>
                     </form>
                 @else
@@ -571,10 +580,14 @@ function productPage(imageMap, variants, allColors, basePrice, productId) {
         },
 
         get isOutOfStock() {
+            @if($product->is_prebooking)
+            return false;
+            @else
             if (this.variants.length > 0 && this.selectedVariant) {
                 return this.selectedVariant.stock <= 0;
             }
             return false;
+            @endif
         },
 
         get canApplyExchange() {

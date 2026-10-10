@@ -426,6 +426,35 @@
                             </button>
                         </div>
                     </label>
+                    <div x-data="{ on: {{ $product->is_prebooking ? 'true' : 'false' }} }" class="pt-1 border-t border-gray-100">
+                        <label class="flex items-center justify-between cursor-pointer pt-4">
+                            <div>
+                                <p class="text-sm font-semibold text-gray-700">Pre-Booking</p>
+                                <p class="text-xs text-gray-400">Sellable before stock arrives</p>
+                            </div>
+                            <input type="hidden" name="is_prebooking" :value="on ? '1' : '0'">
+                            <button type="button" x-on:click="on = !on"
+                                    :class="on ? 'bg-indigo-600' : 'bg-gray-300'"
+                                    class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors">
+                                <span :class="on ? 'translate-x-6' : 'translate-x-1'"
+                                      class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow"></span>
+                            </button>
+                        </label>
+                        <div x-show="on" class="space-y-3 mt-3">
+                            <div>
+                                <label class="label text-xs">Expected Date</label>
+                                <input type="date" name="expected_date"
+                                       value="{{ old('expected_date', $product->expected_date?->format('Y-m-d')) }}"
+                                       class="input text-sm">
+                            </div>
+                            <div>
+                                <label class="label text-xs">Pre-Booking Note <span class="text-gray-400 font-normal">optional</span></label>
+                                <input type="text" name="prebooking_note"
+                                       value="{{ old('prebooking_note', $product->prebooking_note) }}"
+                                       class="input text-sm" placeholder="e.g. Ships within 3 days of launch" maxlength="255">
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 

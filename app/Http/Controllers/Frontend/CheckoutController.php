@@ -30,6 +30,7 @@ class CheckoutController extends Controller
 
         $addresses     = auth()->user()->addresses()->get();
         $shippingZones = ShippingZone::where('is_active', true)->get();
+        $codAvailable  = auth()->user()->canUseCod();
         $coupon        = session('coupon');
         $subtotal      = $cartItems->sum(fn($i) => $i->getSubtotal());
         $discount      = $coupon['discount'] ?? 0;
@@ -41,14 +42,20 @@ class CheckoutController extends Controller
                 $offer = \App\Models\ExchangeOffer::where('product_id', $item->product_id)
                     ->where('is_active', true)->first();
                 if ($offer && !empty($item->exchange_data['condition'])) {
-                    $exchangeDiscount = $offer->calculateValue($item->exchange_data['condition']);
+                    $tradeInPrice = !empty($item->exchange_data['trade_in_price_id'])
+                        ? \App\Models\TradeInPrice::find($item->exchange_data['trade_in_price_id'])
+                        : null;
+                    $exchangeDiscount = $offer->calculateValue(
+                        $item->exchange_data['condition'],
+                        $tradeInPrice ? (float) $tradeInPrice->price : null
+                    );
                 }
                 break;
             }
         }
 
         return view('frontend.checkout.index', compact(
-            'cartItems', 'addresses', 'shippingZones', 'coupon', 'subtotal', 'discount', 'exchangeDiscount'
+            'cartItems', 'addresses', 'shippingZones', 'coupon', 'subtotal', 'discount', 'exchangeDiscount', 'codAvailable'
         ));
     }
 
@@ -60,15 +67,30 @@ class CheckoutController extends Controller
             'payment_method'   => 'required|in:razorpay,cod',
         ]);
 
+        if ($request->payment_method === 'cod' && ! auth()->user()->canUseCod()) {
+            return back()->with('error', 'Cash on Delivery is not available for your account.');
+        }
+
         // Verify address belongs to the logged-in user
         $address = auth()->user()->addresses()->findOrFail($request->address_id);
 
         $cartItems    = Cart::with(['product.images', 'variant'])->where('user_id', auth()->id())->get();
         $shippingZone = ShippingZone::findOrFail($request->shipping_zone_id);
         $coupon       = session('coupon') ? Coupon::find(session('coupon.id')) : null;
+        if ($coupon && ! $coupon->isValid()) {
+            $coupon = null;
+        }
 
         $subtotal = $cartItems->sum(fn($i) => $i->getSubtotal());
-        $discount = $coupon ? $coupon->calculateDiscount($subtotal) : 0;
+
+        $discount = 0;
+        if ($coupon && $coupon->isProductSpecific()) {
+            $productLineAmount = $cartItems->where('product_id', $coupon->product_id)
+                ->sum(fn($i) => $i->getSubtotal());
+            $discount = $productLineAmount > 0 ? $coupon->calculateDiscount($productLineAmount) : 0;
+        } elseif ($coupon) {
+            $discount = $coupon->calculateDiscount($subtotal);
+        }
 
         // Check for exchange data (from any cart item)
         $exchangeData     = null;
@@ -80,7 +102,13 @@ class CheckoutController extends Controller
                 $offer = \App\Models\ExchangeOffer::where('product_id', $item->product_id)
                     ->where('is_active', true)->first();
                 if ($offer && !empty($exchangeData['condition'])) {
-                    $exchangeDiscount = $offer->calculateValue($exchangeData['condition']);
+                    $tradeInPrice = !empty($exchangeData['trade_in_price_id'])
+                        ? \App\Models\TradeInPrice::find($exchangeData['trade_in_price_id'])
+                        : null;
+                    $exchangeDiscount = $offer->calculateValue(
+                        $exchangeData['condition'],
+                        $tradeInPrice ? (float) $tradeInPrice->price : null
+                    );
                 }
                 break;
             }
@@ -101,14 +129,15 @@ class CheckoutController extends Controller
             if ($exchangeData && !empty($exchangeData['brand'])) {
                 $cartItemWithExchange = $cartItems->first(fn($i) => !empty($i->exchange_data));
                 $er = \App\Models\ExchangeRequest::create([
-                    'user_id'         => auth()->id(),
-                    'product_id'      => $cartItemWithExchange?->product_id ?? $cartItems->first()->product_id,
-                    'old_phone_brand' => $exchangeData['brand'],
-                    'old_phone_model' => $exchangeData['model'],
-                    'imei'            => $exchangeData['imei'] ?? '',
-                    'condition'       => $exchangeData['condition'],
-                    'estimated_value' => $exchangeDiscount,
-                    'status'          => 'pending',
+                    'user_id'           => auth()->id(),
+                    'product_id'        => $cartItemWithExchange?->product_id ?? $cartItems->first()->product_id,
+                    'trade_in_price_id' => $exchangeData['trade_in_price_id'] ?? null,
+                    'old_phone_brand'   => $exchangeData['brand'],
+                    'old_phone_model'   => $exchangeData['model'],
+                    'imei'              => $exchangeData['imei'] ?? '',
+                    'condition'         => $exchangeData['condition'],
+                    'estimated_value'   => $exchangeDiscount,
+                    'status'            => 'pending',
                 ]);
                 $exchangeRequestId = $er->id;
             }
@@ -203,8 +232,22 @@ class CheckoutController extends Controller
         }
 
         // Razorpay
-        $paymentData = $this->paymentService->initiatePayment($order);
-        return view('frontend.checkout.payment', compact('order', 'paymentData'));
+        try {
+            $paymentData = $this->paymentService->initiatePayment($order);
+            return view('frontend.checkout.payment', compact('order', 'paymentData'));
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error(
+                'Razorpay initiation failed for order #' . $order->order_number . ': ' . $e->getMessage()
+            );
+            // The order (and its stock decrement) already happened above,
+            // inside the transaction that just committed — so rather than
+            // a raw crash here, send the customer to the order page with a
+            // clear message that payment still needs to be completed.
+            return redirect()->route('checkout.success', $order)->with(
+                'error',
+                'Your order #' . $order->order_number . ' was created, but online payment could not be started. Please contact support to complete payment — no charge has gone through yet.'
+            );
+        }
     }
 
     public function success(Order $order)

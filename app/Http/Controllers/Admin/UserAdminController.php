@@ -53,6 +53,20 @@ class UserAdminController extends Controller
         return response()->json(['active' => $user->is_active]);
     }
 
+    public function updateCod(Request $request, User $user)
+    {
+        // 'default' clears the override and falls back to the site-wide setting
+        $request->validate(['cod_override' => 'required|in:default,enabled,disabled']);
+
+        $user->update(['cod_override' => match ($request->cod_override) {
+            'enabled'  => true,
+            'disabled' => false,
+            default    => null,
+        }]);
+
+        return back()->with('success', 'COD setting updated for ' . $user->name . '.');
+    }
+
     public function destroy(User $user)
     {
         if ($user->id === auth()->id()) {

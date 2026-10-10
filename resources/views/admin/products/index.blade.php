@@ -77,6 +77,9 @@
                                     @if($product->is_featured)
                                         <span class="badge badge-yellow text-xs mt-0.5">⭐ Featured</span>
                                     @endif
+                                    @if($product->is_prebooking)
+                                        <span class="badge badge-indigo text-xs mt-0.5">🔔 Pre-Booking</span>
+                                    @endif
                                 </div>
                             </div>
                         </td>

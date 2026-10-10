@@ -97,20 +97,20 @@ class ProductController extends Controller
         }
 
         // Active coupons to display on product page
-        $availableCoupons = \App\Models\Coupon::where('is_active', true)
-            ->where(function($q) {
-                $q->whereNull('expires_at')->orWhere('expires_at', '>', now());
-            })
-            ->where(function($q) {
-                $q->whereNull('starts_at')->orWhere('starts_at', '<=', now());
-            })
-            ->where(function($q) {
-                $q->whereNull('usage_limit')
-                  ->orWhereColumn('used_count', '<', 'usage_limit');
-            })
-            ->orderBy('value', 'desc')
-            ->take(3)
-            ->get();
+        $validCoupon = function ($q) {
+            $q->where(function($q) { $q->whereNull('expires_at')->orWhere('expires_at', '>', now()); })
+              ->where(function($q) { $q->whereNull('starts_at')->orWhere('starts_at', '<=', now()); })
+              ->where(function($q) { $q->whereNull('usage_limit')->orWhereColumn('used_count', '<', 'usage_limit'); });
+        };
+
+        $productCoupon = \App\Models\Coupon::where('is_active', true)->where('product_id', $product->id)
+            ->where($validCoupon)->first();
+
+        $globalCoupons = \App\Models\Coupon::where('is_active', true)->whereNull('product_id')
+            ->where($validCoupon)->orderBy('value', 'desc')
+            ->take($productCoupon ? 2 : 3)->get();
+
+        $availableCoupons = collect([$productCoupon])->filter()->concat($globalCoupons);
 
         return view('frontend.products.show', compact(
             'product', 'related', 'userReview', 'inWishlist', 'ratingBreakdown', 'availableCoupons'

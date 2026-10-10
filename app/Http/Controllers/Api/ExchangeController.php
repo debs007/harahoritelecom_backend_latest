@@ -4,10 +4,37 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ExchangeOffer;
 use App\Models\Product;
+use App\Models\TradeInPrice;
 use Illuminate\Http\Request;
 
 class ExchangeController extends Controller
 {
+    /**
+     * Search the trade-in reference list — what customers pick their old
+     * phone from instead of free-typing it, so the exchange value can
+     * actually be capped against a real price.
+     */
+    public function searchModels(Request $request)
+    {
+        $request->validate(['q' => 'nullable|string|max:100']);
+
+        $query = TradeInPrice::where('is_active', true);
+        if ($request->q) {
+            $q = $request->q;
+            $query->where(fn($qq) => $qq->where('brand', 'like', "%{$q}%")->orWhere('model', 'like', "%{$q}%"));
+        }
+
+        $results = $query->orderBy('brand')->orderBy('model')->take(20)->get()
+            ->map(fn($p) => [
+                'id'    => $p->id,
+                'brand' => $p->brand,
+                'model' => $p->model,
+                'price' => (float) $p->price,
+            ]);
+
+        return response()->json(['models' => $results]);
+    }
+
     public function getOffer($slug)
     {
         $product = Product::where('slug', $slug)->firstOrFail();
@@ -35,8 +62,9 @@ class ExchangeController extends Controller
     public function estimate(Request $request)
     {
         $request->validate([
-            'product_id' => 'required|exists:products,id',
-            'condition'  => 'required|in:excellent,good,fair,poor',
+            'product_id'        => 'required|exists:products,id',
+            'condition'         => 'required|in:excellent,good,fair,poor',
+            'trade_in_price_id' => 'nullable|exists:trade_in_prices,id',
         ]);
 
         $offer = ExchangeOffer::where('product_id', $request->product_id)
@@ -46,8 +74,21 @@ class ExchangeController extends Controller
             return response()->json(['estimated_value' => 0]);
         }
 
+        // No reference model picked ("Other — not listed") → no instant
+        // estimate. The request still goes through for manual review
+        // rather than granting an uncapped discount for an unknown phone.
+        if (!$request->trade_in_price_id) {
+            return response()->json([
+                'estimated_value' => 0,
+                'requires_review' => true,
+            ]);
+        }
+
+        $tradeIn = TradeInPrice::findOrFail($request->trade_in_price_id);
+
         return response()->json([
-            'estimated_value' => $offer->calculateValue($request->condition),
+            'estimated_value' => $offer->calculateValue($request->condition, (float) $tradeIn->price),
+            'requires_review' => false,
         ]);
     }
 
